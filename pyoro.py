@@ -1,9 +1,6 @@
 #!/usr/bin/python
 import socket
 
-HOST = 'localhost'	# The remote host
-PORT = 6969			  # The same port as used by the server
-
 class OroServerError(Exception):
 	def __init__(self, value):
 		self.value = value
@@ -22,15 +19,15 @@ class Oro(object):
 		#get the list of methods currenlty implemented by the server
 		try:		
 			res = self.call_server(["listSimpleMethods"])
-			rpc = [(t.split('(')[0], len(t.split(','))) for t in res]
+			self.rpc_methods = [(t.split('(')[0], len(t.split(','))) for t in res]
 		except OroServerError:
 			print('Cannot initialize the oro connector! Smthg wrong with the server!')
 			self.server.close()
 			self.s.close()			
 			exit()			   
 		
-		#add the the Oro class all the methods the server declare
-		for m in rpc:
+		#add the the Oro class all the methods the server declares
+		for m in self.rpc_methods:
 			self.add_methods(m)
 
 	def __del__(self):
@@ -78,6 +75,9 @@ class Oro(object):
 
 
 if __name__ == '__main__':
+
+	HOST = 'localhost'	# ORO-server host
+	PORT = 6969		# ORO-server port
 
 	try:
 		oro = Oro(HOST, PORT)
