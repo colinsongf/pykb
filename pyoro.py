@@ -81,12 +81,12 @@ if __name__ == '__main__':
 
 	try:
 		oro = Oro(HOST, PORT)
-		
+		oro.processNL("learn that today is sunny")
 		oro.add("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]")
 		oro.add("[hrp2 rdf:type Robot]")
 		print(oro.lookup("A que Johnny")[0])
-		print(oro.getSimilarities("johnny", "hrp2"))
-		print(oro.getDifferences("johnny", "hrp2"))
+		#print(oro.getSimilarities("johnny", "hrp2"))
+		#print(oro.getDifferences("johnny", "hrp2"))
 	except OroServerError as ose:
 		print('Oups! An error occured!')
 		print(ose)
