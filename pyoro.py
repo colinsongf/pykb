@@ -59,7 +59,7 @@ class Oro(object):
 		def innermethod(*args):
 			req = ["%s" % m[0]]
 			for a in args:
-				req.append(a)
+				req.append(str(a))
 			return self.call_server(req)
 				
 		innermethod.__doc__ = "This method is a proxy for the oro-server %s method." % m[0]
