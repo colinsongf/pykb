@@ -17,7 +17,7 @@ class Oro(object):
 		self.server = self.s.makefile()
 		
 		#get the list of methods currenlty implemented by the server
-		try:		
+		try:
 			res = self.call_server(["listSimpleMethods"])
 			self.rpc_methods = [(t.split('(')[0], len(t.split(','))) for t in res]
 		except OroServerError:
@@ -48,6 +48,13 @@ class Oro(object):
 			self.server.readline() #remove the trailing #end#
 			if raw == '':
 				return
+			#special case for boolean that can not be directly evaluated by Python
+			#since the server return true/false in lower case
+			if raw.lower() == 'true':
+				return True
+			if raw.lower() == 'false':
+				return False
+				
 			res = eval(raw)
 			return res
 		else:
@@ -81,10 +88,19 @@ if __name__ == '__main__':
 
 	try:
 		oro = Oro(HOST, PORT)
-		oro.processNL("learn that today is sunny")
-		oro.add("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]")
-		oro.add("[hrp2 rdf:type Robot]")
-		print(oro.lookup("A que Johnny")[0])
+		#oro.processNL("learn that today is sunny")
+		oro.add(["johnny rdf:type Human", "johnny rdfs:label \"A que Johnny\""])
+		
+		if oro.check("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]"):
+			print "Yeaaaah"
+		
+		
+		#oro.addForAgent("hum1", "[hrp2 rdf:type Robot]")
+		#print(oro.lookup("A que Johnny")[0])
+		
+		#for r in oro.find("bottle", "[?bottle rdf:type Bottle]"):
+		#	print r
+
 		#print(oro.getSimilarities("johnny", "hrp2"))
 		#print(oro.getDifferences("johnny", "hrp2"))
 	except OroServerError as ose:
