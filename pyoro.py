@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import logging
 import socket
 
 class OroServerError(Exception):
@@ -74,10 +75,10 @@ class Oro(object):
 		setattr(self,innermethod.__name__,innermethod)
 	
 	def close(self):
-		print('Closing the connection to ORO...')
+		logging.debug('Closing the connection to ORO...')
 		self.server.close()
 		self.s.close()
-		print('Done. Bye bye!')
+		logging.debug('Done. Bye bye!')
 
 
 
