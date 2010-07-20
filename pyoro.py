@@ -10,29 +10,37 @@ class OroServerError(Exception):
 	
 class Oro(object):
 	def __init__(self, host, port):
-		#create an INET, STREAMing socket
-		self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		
+		self.server = None
+		
+		try:
+			#create an INET, STREAMing socket
+			self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-		#now connect to the oro server
-		self.s.connect((host, port))
-		self.server = self.s.makefile()
+			#now connect to the oro server
+			self.s.connect((host, port))
+			self.server = self.s.makefile()
+		except socket.error:
+			self.s.close()
+			raise OroServerError('Unable to connect to the server. Check it is running and ' + \
+								 'that you provided the right host and port.')
 		
 		#get the list of methods currenlty implemented by the server
 		try:
 			res = self.call_server(["listSimpleMethods"])
 			self.rpc_methods = [(t.split('(')[0], len(t.split(','))) for t in res]
 		except OroServerError:
-			print('Cannot initialize the oro connector! Smthg wrong with the server!')
 			self.server.close()
-			self.s.close()			
-			exit()			   
+			self.s.close()
+			raise OroServerError('Cannot initialize the oro connector! Smthg wrong with the server!')
 		
 		#add the the Oro class all the methods the server declares
 		for m in self.rpc_methods:
 			self.add_methods(m)
 
 	def __del__(self):
-		close()
+		if self.server:
+			close()
 	
 	def call_server(self, req):
 		for r in req:		
