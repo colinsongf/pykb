@@ -40,7 +40,7 @@ class Oro(object):
 
 	def __del__(self):
 		if self.server:
-			close()
+			self.close()
 	
 	def call_server(self, req):
 		for r in req:		
