@@ -1,4 +1,6 @@
 #!/usr/bin/python
+
+import time
 import logging
 import socket
 import select
@@ -98,6 +100,8 @@ class Oro(Thread):
 							"don't know event " + evt_id)
 					else: #it's probably the answer to a request, push it forward.
 						self._oro_responses_queue.put(res)
+			
+			time.sleep(0.05)
 	
 	
 	def subscribe(self, pattern, callback, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE'):
@@ -212,7 +216,6 @@ class Oro(Thread):
 
 if __name__ == '__main__':
 
-	import time
 	logging.basicConfig(level=4, format="%(message)s")
 	HOST = 'localhost'	# ORO-server host
 	PORT = 6969		# ORO-server port
