@@ -109,6 +109,9 @@ class Oro(Thread):
 		tell which variable must be returned.
 		"""
 		
+		if isinstance(pattern, basestring):
+			pattern = [pattern]
+		
 		if type == 'NEW_INSTANCE':
 			#Look if there's more than one variable in the pattern
 			vars = set()
