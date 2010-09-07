@@ -112,8 +112,9 @@ class Oro(Thread):
 							evt_id = res['value'][0]
 							evt_params = res['value'][1:]
 							
-							self._registered_events[evt_id](*evt_params)
-							logging.log(4, "Event notified")
+							cbThread = Thread(target=self._registered_events[evt_id], args=evt_params)
+							cbThread.start()
+							logger.log(4, "Event notified")
 							
 						except KeyError:
 							logger.error("Got a event notification, but I " + \
