@@ -1,11 +1,31 @@
 #!/usr/bin/python
+"""A Python bridge to the ORO-server ontology server.
 
+This library use the standard Python logging mechanism.
+You can retrieve pyoro log messages through the "pyoro" logger. See the end of
+this file for an example showing how to display to the console the log messages.
+"""
 import time
 import logging
 import socket
 import select
 from threading import Thread
 from Queue import Queue
+
+DEBUG_LEVEL=logging.DEBUG
+
+
+class NullHandler(logging.Handler):
+    """Defines a NullHandler for logging, in case pyoro is used in an application
+    that doesn't use logging.
+    """
+    def emit(self, record):
+        pass
+
+logger = logging.getLogger("pyoro")
+
+h = NullHandler()
+logger.addHandler(h)
 
 class OroServerError(Exception):
 	def __init__(self, value):
@@ -96,7 +116,7 @@ class Oro(Thread):
 							logging.log(4, "Event notified")
 							
 						except KeyError:
-							logging.error("Got a event notification, but I " + \
+							logger.error("Got a event notification, but I " + \
 							"don't know event " + evt_id)
 					else: #it's probably the answer to a request, push it forward.
 						self._oro_responses_queue.put(res)
@@ -131,10 +151,10 @@ class Oro(Thread):
 		
 		try:
 			event_id = self.registerEvent(*event_args)
-			logging.log(4, "New event successfully registered with ID " + event_id)
+			logger.log(4, "New event successfully registered with ID " + event_id)
 			self._registered_events[event_id] = callback
 		except AttributeError:
-			logging.error("The server seems not to support events! check the server" + \
+			logger.error("The server seems not to support events! check the server" + \
 			" version & configuration!")
 	
 	def get_oro_response(self):
@@ -166,7 +186,7 @@ class Oro(Thread):
 			
 			oro_answer['value'].append(res)
 			
-		logging.log(4, "Got answer: " + oro_answer['status'] + ", " + str(oro_answer['value']))
+		logger.log(4, "Got answer: " + oro_answer['status'] + ", " + str(oro_answer['value']))
 		
 		return oro_answer
 	
@@ -195,7 +215,7 @@ class Oro(Thread):
 			req = ["%s" % m[0]]
 			for a in args:
 				req.append(str(a))
-			logging.log(4, "Sending request: " + req[0])
+			logger.log(4, "Sending request: " + req[0])
 			return self.call_server(req)
 				
 		innermethod.__doc__ = "This method is a proxy for the oro-server %s method." % m[0]
@@ -205,10 +225,10 @@ class Oro(Thread):
 	def close(self):
 		self._running = False
 		self.join()
-		logging.log(4, 'Closing the connection to ORO...')
+		logger.log(4, 'Closing the connection to ORO...')
 		self._oro_server.close()
 		self.s.close()
-		logging.log(4, 'Done. Bye bye!')
+		logger.log(4, 'Done. Bye bye!')
 	
 	def __del__(self):
 		if self._oro_server:
@@ -216,7 +236,17 @@ class Oro(Thread):
 
 if __name__ == '__main__':
 
-	logging.basicConfig(level=4, format="%(message)s")
+
+	console = logging.StreamHandler()
+	console.setLevel(DEBUG_LEVEL)
+
+	# set a format which is simpler for console use
+	formatter = logging.Formatter('%(asctime)-15s %(name)s: %(levelname)s - %(message)s')
+	# tell the handler to use this format
+	console.setFormatter(formatter)
+	# add the handler to the root logger
+	logger.addHandler(console)
+	
 	HOST = 'localhost'	# ORO-server host
 	PORT = 6969		# ORO-server port
 	
@@ -225,7 +255,7 @@ if __name__ == '__main__':
 	def printer(c):
 		print "Yeahh! event content: " + str(c)
 	
-	print ("Starting now...")
+	logger.info("Starting now...")
 	try:
 		oro.subscribe(["?o isIn room"], printer)
 		
@@ -246,6 +276,9 @@ if __name__ == '__main__':
 		oro.add(["tutuo isIn room"])
 		
 		time.sleep(1)
+		
+		logger.info("done!")
+		
 		
 	except OroServerError as ose:
 		print('Oups! An error occured!')
