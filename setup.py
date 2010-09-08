@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name='pyoro',
-      version='0.8.1',
+      version='0.8.2',
       description='Python Proxy for the OpenRobots Ontology Server',
       author='Séverin Lemaignan',
       author_email='severin.lemaignan@laas.fr',
