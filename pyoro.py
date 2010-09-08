@@ -234,6 +234,67 @@ class Oro(Thread):
 	def __del__(self):
 		if self._oro_server:
 			self.close()
+			
+	def __getitem__(self, pattern, agent='myself'):
+		"""This method introduces a different way of querying the ontology server.
+		It uses the args (be it a string or a set of strings) to find concepts
+		that match the pattern.
+		An optional 'agent' parameter can be given to specify in which model the 
+		query is executed.
+		
+		Differences with a simple 'find':
+		 - it uses '*' instead of '?varname' (but unbound variable starting
+		 with a '?' are still valid to describe relations between concepts)
+		 - it can be use to do a lookup
+		
+		Use example:
+		oro = Oro(<host>, <port>)
+		
+		for agent in oro["* rdf:type Agent"]
+		    ...
+		
+		if oro(["* livesIn ?house", "?house isIn toulouse"], agent='GERALD')
+		    ...
+		
+		#Assuming 'toulouse' has label "ville rose":
+		city_id = oro["ville rose"]
+		"""
+		
+		if type(pattern) == list:
+			return self.findForAgent(agent, "?_var", [stmt.replace("*", "?_var") for stmt in pattern])
+		
+		else:
+			if "*" in pattern:
+				return self.findForAgent(agent, "?_var", [pattern.replace("*", "?_var")])
+			else:
+				lookup = self.lookupForAgent(agent, pattern)
+				return [concept[0] for concept in lookup]
+	
+	def __contains__(self, pattern):
+		""" This will return 'True' is either a concept - described by its ID or
+		label- or a statement or a set of statement is present (or can be infered)
+		in the ontology.
+		
+		This allows syntax like:
+			if 'Toto' in oro:
+			    ...
+			if 'toto sees tata' in oro:
+			    ...
+		"""
+		if not (type(pattern) == list):
+			#First, attempt a lookup
+			if self.lookup(pattern):
+				return True
+			#Lookup didn't answer anything. Check if pattern it can be statement
+			if len(pattern.split()) != 3:
+				return False
+			else:
+				pattern = [pattern]
+		
+		try:
+			return self.check(pattern)
+		except OroServerError:
+			return False
 
 if __name__ == '__main__':
 
@@ -258,10 +319,31 @@ if __name__ == '__main__':
 	
 	logger.info("Starting now...")
 	try:
-		oro.subscribe(["?o isIn room"], printer)
+		#oro.subscribe(["?o isIn room"], printer)
 		
 		#oro.processNL("learn that today is sunny")
-		#oro.add(["johnny rdf:type Human", "johnny rdfs:label \"A que Johnny\""])
+		oro.add(["johnny rdf:type Human", "johnny rdfs:label \"A que Johnny\""])
+		oro.add(["alfred rdf:type Human", "alfred likes icecream"])
+		
+		for human in oro["* rdf:type Human"]:
+			print(human)
+		
+		for icecream_lovers in oro[["* rdf:type Human", "* likes icecream"]]:
+			print(human)
+			
+		print(oro["A que Johnny"])
+		
+		if 'johnny' in oro:
+			print("Johnny is here!")
+		
+		if not 'tartempion' in oro:
+			print('No tartempion :-(')
+		
+		if 'alfred likes icecream' in oro:
+			print("Alfred do like icecreams!")
+		
+		if 'alfred likes judo' in oro:
+			print("Alfred do like judo!")
 		
 		#if oro.check("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]"):
 		#	print "Yeaaaah"
@@ -274,9 +356,9 @@ if __name__ == '__main__':
 		#	print r
 
 		
-		oro.add(["tutuo isIn room"])
+		#oro.add(["tutuo isIn room"])
 		
-		time.sleep(1)
+		#time.sleep(1)
 		
 		logger.info("done!")
 		
