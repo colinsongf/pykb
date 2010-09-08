@@ -295,6 +295,41 @@ class Oro(Thread):
 			return self.check(pattern)
 		except OroServerError:
 			return False
+	
+	def __iadd__(self, stmts):
+		""" This method allows to easily add new statements to the ontology
+		with the '+=' operator.
+		It can only add statement to the robot's model (other agents' model are 
+		not accessible).
+		
+		oro = Oro(<host>, <port>)
+		oro += "toto likes icecream"
+		oro += ["toto loves tata", "tata rdf:type Robot"]
+		"""
+		if not (type(stmts) == list):
+			stmts = [stmts]
+		
+		self.add(stmts)
+		
+		return self
+
+	def __isub__(self, stmts):
+		""" This method allows to easily remove statements from the ontology
+		with the '-=' operator.
+		It can only add statement to the robot's model (other agents' model are 
+		not accessible).
+		If a statement doesn't exist, it is silently skipped.
+		
+		oro = Oro(<host>, <port>)
+		oro -= "toto likes icecream"
+		oro -= ["toto loves tata", "tata rdf:type Robot"]
+		"""
+		if not (type(stmts) == list):
+			stmts = [stmts]
+		
+		self.remove(stmts)
+		
+		return self
 
 if __name__ == '__main__':
 
@@ -322,8 +357,8 @@ if __name__ == '__main__':
 		#oro.subscribe(["?o isIn room"], printer)
 		
 		#oro.processNL("learn that today is sunny")
-		oro.add(["johnny rdf:type Human", "johnny rdfs:label \"A que Johnny\""])
-		oro.add(["alfred rdf:type Human", "alfred likes icecream"])
+		oro += ["johnny rdf:type Human", "johnny rdfs:label \"A que Johnny\""]
+		oro += ["alfred rdf:type Human", "alfred likes icecream"]
 		
 		for human in oro["* rdf:type Human"]:
 			print(human)
@@ -345,6 +380,11 @@ if __name__ == '__main__':
 		if 'alfred likes judo' in oro:
 			print("Alfred do like judo!")
 		
+		oro -= "alfred rdf:type Human"
+		
+		for human in oro["* rdf:type Human"]:
+			print(human)
+			
 		#if oro.check("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]"):
 		#	print "Yeaaaah"
 		
