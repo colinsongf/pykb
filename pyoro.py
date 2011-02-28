@@ -253,7 +253,7 @@ class Oro(Thread):
         for agent in oro["* rdf:type Agent"]
             ...
         
-        if oro(["* livesIn ?house", "?house isIn toulouse"], agent='GERALD')
+        if oro[["* livesIn ?house", "?house isIn toulouse"], agent='GERALD']
             ...
         
         #Assuming 'toulouse' has label "ville rose":
