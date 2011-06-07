@@ -204,7 +204,7 @@ class Oro(Thread):
             return res['value'][0]
             
         elif res['status'] == 'error':
-            msg = res['value'][0] + ": " + res['value'][1]
+            msg = ": ".join(res['value'])
             raise OroServerError(msg)
         
         else:
