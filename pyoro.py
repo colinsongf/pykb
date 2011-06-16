@@ -22,10 +22,10 @@ class NullHandler(logging.Handler):
     def emit(self, record):
         pass
 
-logger = logging.getLogger("pyoro")
+pyorologger = logging.getLogger("pyoro")
 
 h = NullHandler()
-logger.addHandler(h)
+pyorologger.addHandler(h)
 
 class OroServerError(Exception):
     def __init__(self, value):
@@ -114,10 +114,10 @@ class Oro(Thread):
                             
                             cbThread = Thread(target=self._registered_events[evt_id], args=evt_params)
                             cbThread.start()
-                            logger.log(4, "Event notified")
+                            pyorologger.log(4, "Event notified")
                             
                         except KeyError:
-                            logger.error("Got a event notification, but I " + \
+                            pyorologger.error("Got a event notification, but I " + \
                             "don't know event " + evt_id)
                     else: #it's probably the answer to a request, push it forward.
                         self._oro_responses_queue.put(res)
@@ -152,10 +152,10 @@ class Oro(Thread):
         
         try:
             event_id = self.registerEvent(*event_args)
-            logger.log(4, "New event successfully registered with ID " + event_id)
+            pyorologger.log(4, "New event successfully registered with ID " + event_id)
             self._registered_events[event_id] = callback
         except AttributeError:
-            logger.error("The server seems not to support events! check the server" + \
+            pyorologger.error("The server seems not to support events! check the server" + \
             " version & configuration!")
     
     def get_oro_response(self):
@@ -187,7 +187,7 @@ class Oro(Thread):
             
             oro_answer['value'].append(res)
             
-        logger.log(4, "Got answer: " + oro_answer['status'] + ", " + str(oro_answer['value']))
+        pyorologger.log(4, "Got answer: " + oro_answer['status'] + ", " + str(oro_answer['value']))
         
         return oro_answer
     
@@ -216,7 +216,7 @@ class Oro(Thread):
             req = ["%s" % m[0]]
             for a in args:
                 req.append(str(a))
-            logger.log(4, "Sending request: " + req[0])
+            pyorologger.log(4, "Sending request: " + req[0])
             return self.call_server(req)
                 
         innermethod.__doc__ = "This method is a proxy for the oro-server %s method." % m[0]
@@ -226,10 +226,10 @@ class Oro(Thread):
     def close(self):
         self._running = False
         self.join()
-        logger.log(4, 'Closing the connection to ORO...')
+        pyorologger.log(4, 'Closing the connection to ORO...')
         self._oro_server.close()
         self.s.close()
-        logger.log(4, 'Done. Bye bye!')
+        pyorologger.log(4, 'Done. Bye bye!')
     
     def __del__(self):
         if self._oro_server:
@@ -335,14 +335,14 @@ if __name__ == '__main__':
 
 
     console = logging.StreamHandler()
-    console.setLevel(DEBUG_LEVEL)
+    console.setLevel(4)
 
     # set a format which is simpler for console use
     formatter = logging.Formatter('%(asctime)-15s %(name)s: %(levelname)s - %(message)s')
     # tell the handler to use this format
     console.setFormatter(formatter)
     # add the handler to the root logger
-    logger.addHandler(console)
+    pyorologger.addHandler(console)
     
     HOST = 'localhost'    # ORO-server host
     PORT = 6969        # ORO-server port
@@ -352,8 +352,9 @@ if __name__ == '__main__':
     def printer(c):
         print "Yeahh! event content: " + str(c)
     
-    logger.info("Starting now...")
+    pyorologger.info("Starting now...")
     try:
+        oro.lookup("PurposefulAction")
         #oro.subscribe(["?o isIn room"], printer)
         
         #oro.processNL("learn that today is sunny")
@@ -400,7 +401,7 @@ if __name__ == '__main__':
         
         #time.sleep(1)
         
-        logger.info("done!")
+        pyorologger.info("done!")
         
         
     except OroServerError as ose:
