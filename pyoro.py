@@ -34,7 +34,7 @@ class OroServerError(Exception):
         return repr(self.value)
 
 class Oro(Thread):
-    def __init__(self, host, port):
+    def __init__(self, host = "localhost", port = 6969):
         Thread.__init__(self)
         
         self._oro_requests_queue = Queue()
