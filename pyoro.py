@@ -125,13 +125,16 @@ class Oro(Thread):
             time.sleep(0.05)
     
     
-    def subscribe(self, pattern, callback, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE'):
+    def subscribe(self, pattern, callback, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', agent = 'myself'):
         """ Allows to subscribe to an event, and get notified when the event is 
         triggered. This replace ORO's registerEvent. Do not call Oro.registerEvent()
         directly since it doesn't allow to define a callback function.
         
         The 'var' parameter can be used with the 'NEW_INSTANCE' type of event to
         tell which variable must be returned.
+
+        The 'agent' parameter allows for registering an event in a specific model. By default,
+        the main (robot) model is used.
         """
         
         if isinstance(pattern, basestring):
@@ -148,10 +151,10 @@ class Oro(Thread):
             if len(vars) == 1:
                 var = vars.pop()
         
-        event_args = [type, trigger, var, pattern] if var else [type, trigger, pattern]
+        event_args = [agent, type, trigger, var, pattern] if var else [type, trigger, pattern]
         
         try:
-            event_id = self.registerEvent(*event_args)
+            event_id = self.registerEventForAgent(*event_args)
             pyorologger.log(4, "New event successfully registered with ID " + event_id)
             self._registered_events[event_id] = callback
         except AttributeError:
