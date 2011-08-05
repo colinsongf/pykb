@@ -10,7 +10,11 @@ import logging
 import socket
 import select
 from threading import Thread
-from Queue import Queue
+
+try:
+    from Queue import Queue
+except ImportError: #Python3 compat
+    from queue import Queue
 
 DEBUG_LEVEL=logging.DEBUG
 
@@ -54,7 +58,7 @@ class Oro(Thread):
 
             #now connect to the oro server
             self.s.connect((host, port))
-            self._oro_server = self.s.makefile()
+            self._oro_server = self.s.makefile(mode='rw')
         except socket.error:
             self.s.close()
             raise OroServerError('Unable to connect to the server. Check it is running and ' + \
@@ -353,7 +357,7 @@ if __name__ == '__main__':
     oro = Oro(HOST, PORT)
     
     def printer(c):
-        print "Yeahh! event content: " + str(c)
+        print("Yeahh! event content: " + str(c))
     
     pyorologger.info("Starting now...")
     try:
