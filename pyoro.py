@@ -109,6 +109,9 @@ class Oro(Thread):
             
             for i in inputready:
                 if i == self._oro_server:
+                    # TODO: issue here if we have more than one message
+                    # queued. The second one is discarded. This cause
+                    # for instance some event to be shallowed...
                     res = self.get_oro_response()
                     
                     if res['status'] == "event": #notify the event
@@ -155,8 +158,7 @@ class Oro(Thread):
             if len(vars) == 1:
                 var = vars.pop()
         
-        event_args = [agent, type, trigger, var, pattern] if var else [type, trigger, pattern]
-        
+        event_args = [agent, type, trigger, var, pattern] if var else [agent, type, trigger, pattern]
         try:
             event_id = self.registerEventForAgent(*event_args)
             pyorologger.log(4, "New event successfully registered with ID " + event_id)
