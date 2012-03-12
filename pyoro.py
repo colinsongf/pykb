@@ -41,6 +41,9 @@ class Oro(Thread):
     def __init__(self, host = "localhost", port = 6969):
         Thread.__init__(self)
         
+        self.port = port
+        self.host = host
+
         self._oro_requests_queue = Queue()
         self._oro_responses_queue = Queue()
         
