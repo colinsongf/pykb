@@ -16,7 +16,7 @@ try:
 except ImportError: #Python3 compat
     from queue import Queue
 
-DEBUG_LEVEL=logging.DEBUG
+DEBUG_LEVEL=logging.INFO
 
 
 class NullHandler(logging.Handler):
@@ -124,7 +124,7 @@ class Oro(Thread):
                             
                             cbThread = Thread(target=self._registered_events[evt_id], args=evt_params)
                             cbThread.start()
-                            pyorologger.log(4, "Event notified")
+                            pyorologger.debug("Event notified")
                             
                         except KeyError:
                             pyorologger.error("Got a event notification, but I " + \
@@ -164,7 +164,7 @@ class Oro(Thread):
         event_args = [agent, type, trigger, var, pattern] if var else [agent, type, trigger, pattern]
         try:
             event_id = self.registerEventForAgent(*event_args)
-            pyorologger.log(4, "New event successfully registered with ID " + event_id)
+            pyorologger.debug("New event successfully registered with ID " + event_id)
             self._registered_events[event_id] = callback
         except AttributeError:
             pyorologger.error("The server seems not to support events! check the server" + \
@@ -199,7 +199,7 @@ class Oro(Thread):
             
             oro_answer['value'].append(res)
             
-        pyorologger.log(4, "Got answer: " + oro_answer['status'] + ", " + str(oro_answer['value']))
+        pyorologger.debug("Got answer: " + oro_answer['status'] + ", " + str(oro_answer['value']))
         
         return oro_answer
     
@@ -228,7 +228,7 @@ class Oro(Thread):
             req = ["%s" % m[0]]
             for a in args:
                 req.append(str(a))
-            pyorologger.log(4, "Sending request: " + req[0])
+            pyorologger.debug("Sending request: " + req[0])
             return self.call_server(req)
                 
         innermethod.__doc__ = "This method is a proxy for the oro-server %s method." % m[0]
@@ -238,10 +238,10 @@ class Oro(Thread):
     def close(self):
         self._running = False
         self.join()
-        pyorologger.log(4, 'Closing the connection to ORO...')
+        pyorologger.info('Closing the connection to ORO...')
         self._oro_server.close()
         self.s.close()
-        pyorologger.log(4, 'Done. Bye bye!')
+        pyorologger.debug('Done. Bye bye!')
     
     def __del__(self):
         if self._oro_server:
@@ -345,10 +345,8 @@ class Oro(Thread):
 
 if __name__ == '__main__':
 
-
     console = logging.StreamHandler()
-    console.setLevel(4)
-
+    pyorologger.setLevel(DEBUG_LEVEL)
     # set a format which is simpler for console use
     formatter = logging.Formatter('%(asctime)-15s %(name)s: %(levelname)s - %(message)s')
     # tell the handler to use this format
