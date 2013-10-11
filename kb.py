@@ -305,13 +305,10 @@ class KB(Thread):
             #Lookup didn't answer anything. Check if pattern it can be statement
             if len(shlex.split(pattern)) != 3:
                 return False
-            else:
-                pattern = [pattern]
+
+            pattern = [pattern]
         
-        try:
-            return self.check(pattern)
-        except KbServerError:
-            return False
+        return self.exist(pattern)
     
     def __iadd__(self, stmts):
         """ This method allows to easily add new statements to the ontology
