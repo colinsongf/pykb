@@ -367,10 +367,9 @@ if __name__ == '__main__':
     
     kblogger.info("Starting now...")
     try:
-        kb.lookup("PurposefulAction")
-        #kb.subscribe(["?o isIn room"], printer)
+        print(kb.lookup("PurposefulAction"))
+        kb.subscribe(["?o isIn room"], printer)
         
-        #kb.processNL("learn that today is sunny")
         kb += ["johnny rdf:type Human", "johnny rdfs:label \"A que Johnny\""]
         kb += ["alfred rdf:type Human", "alfred likes icecream"]
         
@@ -399,20 +398,20 @@ if __name__ == '__main__':
         for human in kb["* rdf:type Human"]:
             print(human)
             
-        #if kb.check("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]"):
-        #    print "Yeaaaah"
+        if kb.check("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]"):
+            print "Yeaaaah"
         
         
-        #kb.addForAgent("johnny", "[hrp2 rdf:type Robot]")
-        #print(kb.lookup("A que Johnny")[0])
+        kb.revise("[hrp2 rdf:type Robot]", {"method":"add", "models":["johnny"]})
+        print(kb.lookup("A que Johnny")[0])
         
-        #for r in kb.find("bottle", "[?bottle rdf:type Bottle]"):
-        #    print r
+        for r in kb.find("bottle", "[?bottle rdf:type Bottle]"):
+            print r
 
         
-        #kb.add(["tutuo isIn room"])
+        kb.add(["tutuo isIn room"])
         
-        #time.sleep(1)
+        time.sleep(1)
         
         kblogger.info("done!")
         
