@@ -75,7 +75,7 @@ class KB(Thread):
         self.start()
         #get the list of methods currenlty implemented by the server
         try:
-            res = self.call_server(["api"])
+            res = self.call_server(["methods"])
             self.rpc_methods = [(t.split('(')[0], len(t.split(','))) for t in res]
         except KbServerError:
             self._kb_server.close()
@@ -140,7 +140,7 @@ class KB(Thread):
             time.sleep(0.05)
     
     
-    def subscribe(self, pattern, callback, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', agent = 'myself'):
+    def subscribe(self, pattern, callback, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', agent = 'default'):
         """ Allows to subscribe to an event, and get notified when the event is 
         triggered. This replace kb's registerEvent. Do not call KB.registerEvent()
         directly since it doesn't allow to define a callback function.
@@ -252,7 +252,7 @@ class KB(Thread):
         if self._kb_server:
             self.close()
             
-    def __getitem__(self, pattern, agent='myself'):
+    def __getitem__(self, pattern, agent='default'):
         """This method introduces a different way of querying the ontology server.
         It uses the args (be it a string or a set of strings) to find concepts
         that match the pattern.
@@ -278,13 +278,13 @@ class KB(Thread):
         """
         
         if type(pattern) == list:
-            return self.findForAgent(agent, "?_var", [stmt.replace("*", "?_var") for stmt in pattern])
+            return self.find(["?_var"], [stmt.replace("*", "?_var") for stmt in pattern], None, agent)
         
         else:
             if "*" in pattern:
-                return self.findForAgent(agent, "?_var", [pattern.replace("*", "?_var")])
+                return self.find(["?_var"], [pattern.replace("*", "?_var")], None, agent)
             else:
-                lookup = self.lookupForAgent(agent, pattern)
+                lookup = self.lookup(pattern, agent)
                 return [concept[0] for concept in lookup]
     
     def __contains__(self, pattern):
@@ -328,7 +328,7 @@ class KB(Thread):
         return self
 
     def __isub__(self, stmts):
-        """ This method allows to easily remove statements from the ontology
+        """ This method allows to easily retract statements from the ontology
         with the '-=' operator.
         It can only add statement to the robot's model (other agents' model are 
         not accessible).
@@ -341,14 +341,14 @@ class KB(Thread):
         if not (type(stmts) == list):
             stmts = [stmts]
         
-        self.remove(stmts)
+        self.retract(stmts)
         
         return self
 
 if __name__ == '__main__':
 
     console = logging.StreamHandler()
-    DEBUG_LEVEL=logging.DEBUG
+    DEBUG_LEVEL=logging.INFO
     kblogger.setLevel(DEBUG_LEVEL)
     # set a format which is simpler for console use
     formatter = logging.Formatter('%(asctime)-15s %(name)s: %(levelname)s - %(message)s')
@@ -365,7 +365,7 @@ if __name__ == '__main__':
     def printer(c):
         print("Yeahh! event content: " + str(c))
     
-    kblogger.info("Starting now...")
+    print("Starting now...")
     try:
         print(kb.lookup("PurposefulAction"))
         kb.subscribe(["?o isIn room"], printer)
@@ -373,47 +373,63 @@ if __name__ == '__main__':
         kb += ["johnny rdf:type Human", "johnny rdfs:label \"A que Johnny\""]
         kb += ["alfred rdf:type Human", "alfred likes icecream"]
         
+        print("\n\nWhat do I know about humans?\n")
+        print(kb.about("Human"))
+
+        print("\n\nHere the humans I know about:\n")
         for human in kb["* rdf:type Human"]:
             print(human)
         
+        print("\n\nWhich humans like icecreams?\n")
         for icecream_lovers in kb[["* rdf:type Human", "* likes icecream"]]:
             print(human)
-            
+        
+
+        print("\n\nDo I know smthg about 'A que Johnny'?\n")
         print(kb["A que Johnny"])
         
+        print("\n\nIs 'johnny' smthg I know?\n")
         if 'johnny' in kb:
             print("Johnny is here!")
         
+        print("\n\nIs 'tartempion' smthg I know?\n")
         if not 'tartempion' in kb:
             print('No tartempion :-(')
         
+        print("\n\nDoes Alfred like icecreams?\n")
         if 'alfred likes icecream' in kb:
             print("Alfred do like icecreams!")
         
+        print("\n\nDoes Alfred like judo?\n")
         if 'alfred likes judo' in kb:
             print("Alfred do like judo!")
         
-        kb -= "alfred rdf:type Human"
         
+        print("\n\nDeleting Alfred. Here the humans I know about:\n")
+        kb -= "alfred rdf:type Human"
         for human in kb["* rdf:type Human"]:
             print(human)
             
-        if kb.check("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]"):
+        print("\n\nDo I know everything important about 'johnny'?\n")
+        if kb.exist("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]"):
             print "Yeaaaah"
         
         
         kb.revise("[hrp2 rdf:type Robot]", {"method":"add", "models":["johnny"]})
         print(kb.lookup("A que Johnny")[0])
         
-        for r in kb.find("bottle", "[?bottle rdf:type Bottle]"):
+
+        print("\n\nWhat are the bottles I know about?\n")
+        for r in kb.find(["bottle"], "[?bottle rdf:type Bottle]"):
             print r
 
         
+        print("\n\nI should know who is in the room\n")
         kb.add(["tutuo isIn room"])
         
         time.sleep(1)
         
-        kblogger.info("done!")
+        print("done! youpi!")
         
         
     except KbServerError as ose:
