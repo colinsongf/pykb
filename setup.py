@@ -2,11 +2,10 @@
 
 from distutils.core import setup
 
-setup(name='pyoro',
-      version='1.1.1',
-      description='Python Proxy for the OpenRobots Ontology Server',
+setup(name='pykb',
+      version='1.2',
+      description='Python API to access a KB-API conformant knowledge base',
       author='Séverin Lemaignan',
-      author_email='severin.lemaignan@laas.fr',
-      url='http://softs.laas.fr/openrobots',
-      py_modules=['pyoro'],
+      author_email='severin.lemaignan@epfl.ch',
+      py_modules=['kb'],
       )
