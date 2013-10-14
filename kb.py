@@ -1,27 +1,24 @@
-#!/usr/bin/python
-"""Python bindings for KB-API conformant knowledge bases.
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-It also supports an extension for events.
+import logging; kblogger = logging.getLogger("kb");
+DEBUG_LEVEL=logging.WARN
 
-This library use the standard Python logging mechanism.
-You can retrieve kb log messages through the "kb" logger. See the end of
-this file for an example showing how to display to the console the log messages.
-"""
-import time
-import logging
+import sys
+import threading, asyncore
+import asynchat
 import socket
-import select
-from threading import Thread
-import ast
+
 import shlex
+import json
 
 try:
     from Queue import Queue
 except ImportError: #Python3 compat
     from queue import Queue
 
-DEBUG_LEVEL=logging.INFO
 
+DEFAULT_PORT = 6969
 
 class NullHandler(logging.Handler):
     """Defines a NullHandler for logging, in case kb is used in an application
@@ -35,111 +32,56 @@ kblogger = logging.getLogger("kb")
 h = NullHandler()
 kblogger.addHandler(h)
 
-class KbServerError(Exception):
+class KbError(Exception):
     def __init__(self, value):
         self.value = value
     def __str__(self):
         return repr(self.value)
 
-class KB(Thread):
-    def __init__(self, host = "localhost", port = 6969):
-        Thread.__init__(self)
-        
-        self.port = port
-        self.host = host
 
-        self._kb_requests_queue = Queue()
-        self._kb_responses_queue = Queue()
+MSG_SEPARATOR = "#end#"
+
+KB_OK="ok"
+KB_ERROR="error"
+KB_EVENT="event"
+
+class KB:
+
+    def __init__(self, host='localhost', port=DEFAULT_PORT, sock=None):
+
+        self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1} )
         
-        self._running = True
-        
-        self._kb_server = None
-        
-        #This map stores the ids of currently registered events and the corresponding
+
+        self._client = KBClient(host, port, sock)
+        self._asyncore_thread.start()
+
+        #add to the KB class all the methods the server declares
+        methods = self._client.call_server("methods")
+        for m in methods:
+            self.add_method(m)
+
         #callback function.
         self._registered_events = {}
-        
-        try:
-            #create an INET, STREAMing socket
-            self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+ 
+    def add_method(self, m):
+        m = str(m) # convert from unicode...
+        def innermethod(*args):
+            kblogger.debug("Sending <%s> request to server."%m)
+            return self._client.call_server(m, *args)
+                
+        innermethod.__doc__ = "This method is a proxy for the knowledge server %s method." % m
+        #HACK: special case for the server's subscribe method: we want to override it
+        # to provide proper Python callback.
+        innermethod.__name__ = m if m != "subscribe" else "server_subscribe"
+        setattr(self,innermethod.__name__,innermethod)
 
-            #now connect to the kb server
-            self.s.connect((host, port))
-            self._kb_server = self.s.makefile(mode='rw')
-        except socket.error:
-            self.s.close()
-            raise KbServerError('Unable to connect to the server. Check it is running and ' + \
-                                 'that you provided the right host and port.')
-        
-        kblogger.debug("Socket connection established")
-        self.start()
-        #get the list of methods currenlty implemented by the server
-        try:
-            res = self.call_server(["methods"])
-            self.rpc_methods = [(t.split('(')[0], len(t.split(','))) for t in res]
-        except KbServerError:
-            self._kb_server.close()
-            self.s.close()
-            raise KbServerError('Cannot initialize the kb connector! Smthg wrong with the server!')
-        
-        #add the the KB class all the methods the server declares
-        for m in self.rpc_methods:
-            self.add_methods(m)
-    
-    def run(self):
-        """ This method reads and writes to/from the ontology server.
-        When a new request is pushed in _kb_requests_queue, it is send to the 
-        server, when the server answer smthg, we check if it's a normal answer
-        or an event, and dispatch accordingly the answer's content.
-        """
-        
-        inputs = [self._kb_server]
-        outputs = [self._kb_server]
-        
-        while self._running:
-        
-            try:
-                inputready,outputready,exceptready = select.select(inputs, outputs, [])
-            except select.error as e:
-                break
-            except socket.error as e:
-                break
-            
-            if not self._kb_requests_queue.empty():
-                for o in outputready:
-                    if o == self._kb_server:
-                        for r in self._kb_requests_queue.get():
-                            self._kb_server.write(r)
-                            self._kb_server.write("\n")
-                            
-                        self._kb_server.write("#end#\n")
-                        self._kb_server.flush()
-            
-            for i in inputready:
-                if i == self._kb_server:
-                    # TODO: issue here if we have more than one message
-                    # queued. The second one is discarded. This cause
-                    # for instance some event to be shallowed...
-                    res = self.get_kb_response()
-                    
-                    if res['status'] == "event": #notify the event
-                        try:
-                            evt_id = res['value'][0]
-                            evt_params = res['value'][1:]
-                            
-                            cbThread = Thread(target=self._registered_events[evt_id], args=evt_params)
-                            cbThread.start()
-                            kblogger.debug("Event notified")
-                            
-                        except KeyError:
-                            kblogger.error("Got a event notification, but I " + \
-                            "don't know event " + evt_id)
-                    else: #it's probably the answer to a request, push it forward.
-                        self._kb_responses_queue.put(res)
-            
-            time.sleep(0.05)
-    
-    
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        self._client.close_when_done()
+        self._asyncore_thread.join()
+
     def subscribe(self, pattern, callback, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', agent = 'default'):
         """ Allows to subscribe to an event, and get notified when the event is 
         triggered. This replace kb's registerEvent. Do not call KB.registerEvent()
@@ -166,92 +108,14 @@ class KB(Thread):
             if len(vars) == 1:
                 var = vars.pop()
         
-        event_args = [agent, type, trigger, var, pattern] if var else [agent, type, trigger, pattern]
         try:
-            event_id = self.registerEventForAgent(*event_args)
+            event_id = self.server_subscribe(type, trigger, var, pattern, agent)
             kblogger.debug("New event successfully registered with ID " + event_id)
             self._registered_events[event_id] = callback
         except AttributeError:
             kblogger.error("The server seems not to support events! check the server" + \
             " version & configuration!")
-    
-    def get_kb_response(self):
-        kb_answer = {'status': self._kb_server.readline().rstrip('\n'), 'value':[]}
-        
-        while True:
-            next = self._kb_server.readline().rstrip('\n')
-            
-            if next == "#end#":
-                break
-            
-            if next == '':
-                continue
-                
-            #special case for boolean that can not be directly evaluated by Python
-            #since the server return true/false in lower case
-            elif next.lower() == 'true':
-                res = True
-            elif next.lower() == 'false':
-                res = False
-            
-            else:
-                try:
-                    res = ast.literal_eval(next)
-                except SyntaxError:
-                    res = next
-                except ValueError:
-                    res = next
-            
-            kb_answer['value'].append(res)
-            
-        kblogger.debug("Got answer: " + kb_answer['status'] + ", " + str(kb_answer['value']))
-        
-        return kb_answer
-    
-    
-    def call_server(self, req):
-        
-        self._kb_requests_queue.put(req)
-        
-        res = self._kb_responses_queue.get() #block until we get an answer
-        
-        if res['status'] == 'ok':
-            if not res['value']:
-                return None
-            return res['value'][0]
-            
-        elif res['status'] == 'error':
-            msg = ": ".join(res['value'])
-            raise KbServerError(msg)
-        
-        else:
-            raise KbServerError("Got an unexpected message status from the knowledge base: " + \
-            res['status'])
-        
-    def add_methods(self, m):
-        def innermethod(*args):
-            req = ["%s" % m[0]]
-            for a in args:
-                req.append(str(a))
-            kblogger.debug("Sending request: " + req[0])
-            return self.call_server(req)
-                
-        innermethod.__doc__ = "This method is a proxy for the knowledge server %s method." % m[0]
-        innermethod.__name__ = m[0]
-        setattr(self,innermethod.__name__,innermethod)
-    
-    def close(self):
-        self._running = False
-        self.join()
-        kblogger.info('Closing the connection to the knowledge server...')
-        self._kb_server.close()
-        self.s.close()
-        kblogger.debug('Done. Bye bye!')
-    
-    def __del__(self):
-        if self._kb_server:
-            self.close()
-            
+ 
     def __getitem__(self, pattern, agent='default'):
         """This method introduces a different way of querying the ontology server.
         It uses the args (be it a string or a set of strings) to find concepts
@@ -345,95 +209,73 @@ class KB(Thread):
         
         return self
 
+
+
+class KBClient(asynchat.async_chat):
+
+    def __init__(self, host='localhost', port=DEFAULT_PORT, sock=None):
+        asynchat.async_chat.__init__(self, sock=sock)
+        if not sock:
+            self.create_socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
+            self.connect( (host, port) )
+
+        self.set_terminator(MSG_SEPARATOR)
+        self._in_buffer = b""
+        self._incoming_response = Queue()
+
+    def collect_incoming_data(self, data):
+        self._in_buffer = self._in_buffer + data
+
+    def found_terminator(self):
+        status, value = self.decode(self._in_buffer)
+        self._incoming_response.put((status, value))
+        self._in_buffer = b""
+
+    def call_server(self, method, *args):
+        self.push(self.encode(method, *args))
+        status, value = self._incoming_response.get()
+        if status == KB_ERROR:
+            raise KbError(value)
+        else:
+            return value
+
+    def encode(self, method, *args):
+        return "\n".join([method] + [json.dumps(a) for a in args] + [MSG_SEPARATOR])
+
+    def decode(self, raw):
+        parts = raw.strip().split('\n')
+
+        if parts[0] == "ok":
+            if len(parts) > 1:
+                return "ok", json.loads(parts[1])
+            else:
+                return "ok", None
+        elif parts[0] == "event":
+            return "event", parts[1]
+        elif parts[0] == "error":
+            return "error", "%s: %s"%(parts[1], parts[2])
+        else:
+            raise KbError("Got an unexpected message status from the knowledge base: %s"%parts[0])
+
+    #def handle_error(self):
+    #    print("Bonjour!")
+
+
 if __name__ == '__main__':
 
-    console = logging.StreamHandler()
-    DEBUG_LEVEL=logging.INFO
-    kblogger.setLevel(DEBUG_LEVEL)
-    # set a format which is simpler for console use
-    formatter = logging.Formatter('%(asctime)-15s %(name)s: %(levelname)s - %(message)s')
-    # tell the handler to use this format
+    import time
+    from logging import StreamHandler
+
+    console = StreamHandler()
+    kblogger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)-15s: %(message)s')
     console.setFormatter(formatter)
-    # add the handler to the root logger
     kblogger.addHandler(console)
-    
-    HOST = 'localhost'    # kb-server host
-    PORT = 6969        # kb-server port
-    
-    kb = KB(HOST, PORT)
-    
-    def printer(c):
-        print("Yeahh! event content: " + str(c))
-    
-    print("Starting now...")
-    try:
-        print(kb.lookup("PurposefulAction"))
-        kb.subscribe(["?o isIn room"], printer)
-        
-        kb += ["johnny rdf:type Human", "johnny rdfs:label \"A que Johnny\""]
-        kb += ["alfred rdf:type Human", "alfred likes icecream"]
-        
-        print("\n\nWhat do I know about humans?\n")
-        print(kb.about("Human"))
 
-        print("\n\nHere the humans I know about:\n")
-        for human in kb["* rdf:type Human"]:
-            print(human)
-        
-        print("\n\nWhich humans like icecreams?\n")
-        for icecream_lovers in kb[["* rdf:type Human", "* likes icecream"]]:
-            print(human)
-        
 
-        print("\n\nDo I know smthg about 'A que Johnny'?\n")
-        print(kb["A que Johnny"])
-        
-        print("\n\nIs 'johnny' smthg I know?\n")
-        if 'johnny' in kb:
-            print("Johnny is here!")
-        
-        print("\n\nIs 'tartempion' smthg I know?\n")
-        if not 'tartempion' in kb:
-            print('No tartempion :-(')
-        
-        print("\n\nDoes Alfred like icecreams?\n")
-        if 'alfred likes icecream' in kb:
-            print("Alfred do like icecreams!")
-        
-        print("\n\nDoes Alfred like judo?\n")
-        if 'alfred likes judo' in kb:
-            print("Alfred do like judo!")
-        
-        
-        print("\n\nDeleting Alfred. Here the humans I know about:\n")
-        kb -= "alfred rdf:type Human"
-        for human in kb["* rdf:type Human"]:
-            print(human)
-            
-        print("\n\nDo I know everything important about 'johnny'?\n")
-        if kb.exist("[johnny rdf:type Human, johnny rdfs:label \"A que Johnny\"]"):
-            print "Yeaaaah"
-        
-        
-        kb.revise("[hrp2 rdf:type Robot]", {"method":"add", "models":["johnny"]})
-        print(kb.lookup("A que Johnny")[0])
-        
+    kb = KB()
 
-        print("\n\nWhat are the bottles I know about?\n")
-        for r in kb.find(["bottle"], "[?bottle rdf:type Bottle]"):
-            print r
 
-        
-        print("\n\nI should know who is in the room\n")
-        kb.add(["tutuo isIn room"])
-        
-        time.sleep(1)
-        
-        print("done! youpi!")
-        
-        
-    except KbServerError as ose:
-        print('Oups! An error occured!')
-        print(ose)
-    finally:
-        kb.close()
+    time.sleep(.1)
+    print("Closing now...")
+    kb.close()
