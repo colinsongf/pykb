@@ -146,7 +146,7 @@ class KB:
         self._client.close_when_done()
         self._asyncore_thread.join()
 
-    def subscribe(self, pattern, callback = None, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', agent = 'default'):
+    def subscribe(self, pattern, callback = None, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', models = None):
         """ Allows to subscribe to an event, and get notified when the event is 
         triggered.
 
@@ -174,8 +174,8 @@ class KB:
         The 'var' parameter can be used with the 'NEW_INSTANCE' type of event to
         tell which variable must be returned.
 
-        The 'model' parameter allows for registering an event in a specific model.
-        By default, the pattern is monitored on every models.
+        The 'models' parameter allows for registering an event in a specific list 
+        of models. By default, the pattern is monitored on every models.
 
         Returns the event id of the newly created event.
         """
@@ -194,19 +194,19 @@ class KB:
             if len(vars) == 1:
                 var = vars.pop()
 
-        event_id = self.server_subscribe(type, trigger, var, pattern, agent)
+        event_id = self.server_subscribe(type, trigger, var, pattern, models)
         kblogger.debug("New event successfully registered with ID " + event_id)
         if callback:
             self._registered_callbacks.put((event_id, callback))
 
         return event_id
 
-    def __getitem__(self, pattern, agent='default'):
+    def __getitem__(self, pattern, models = None):
         """This method introduces a different way of querying the ontology server.
         It uses the args (be it a string or a set of strings) to find concepts
         that match the pattern.
-        An optional 'agent' parameter can be given to specify in which model the 
-        query is executed.
+        An optional 'models' parameter can be given to specify the list of models the 
+        query is executed on.
         
         Differences with a simple 'find':
          - it uses '*' instead of '?varname' (but unbound variable starting
@@ -219,7 +219,7 @@ class KB:
         for agent in kb["* rdf:type Agent"]
             ...
         
-        if kb[["* livesIn ?house", "?house isIn toulouse"], agent='GERALD']
+        if kb[["* livesIn ?house", "?house isIn toulouse"], models=['GERALD']]
             ...
         
         #Assuming 'toulouse' has label "ville rose":
@@ -227,13 +227,13 @@ class KB:
         """
         
         if type(pattern) == list:
-            return self.find(["?_var"], [stmt.replace("*", "?_var") for stmt in pattern], None, agent)
+            return self.find(["?_var"], [stmt.replace("*", "?_var") for stmt in pattern], None, models)
         
         else:
             if "*" in pattern:
-                return self.find(["?_var"], [pattern.replace("*", "?_var")], None, agent)
+                return self.find(["?_var"], [pattern.replace("*", "?_var")], None, models)
             else:
-                lookup = self.lookup(pattern, agent)
+                lookup = self.lookup(pattern, models)
                 return [concept[0] for concept in lookup]
     
     def __contains__(self, pattern):
