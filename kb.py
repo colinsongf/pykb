@@ -5,6 +5,7 @@ import logging; kblogger = logging.getLogger("kb");
 DEBUG_LEVEL=logging.WARN
 
 import sys
+from errno import ECONNREFUSED
 import threading, asyncore
 import asynchat
 import socket
@@ -106,10 +107,7 @@ class KB:
         self._internal_events = Queue()
         # events that are not dealt with a callback
         self.events = Queue()
-        #new subscribers
-        self._registered_callbacks = Queue()
-        self._callbackexecutor = EventCallbackExecutor(self._internal_events, self.events, self._registered_callbacks)
-        self._callbackexecutor.start()
+        self._callbackexecutor = None
 
         self._client = KBClient(self._internal_events, host, port, sock)
         self._asyncore_thread.start()
@@ -118,6 +116,14 @@ class KB:
         methods = self._client.call_server("methods")
         for m in methods:
             self.add_method(m)
+
+        #new subscribers. The callbackExecutor thread is started only at the
+        # end of the constructor -> we first want to be sure we were able
+        # to connect to the knowledge base
+        self._registered_callbacks = Queue()
+        self._callbackexecutor = EventCallbackExecutor(self._internal_events, self.events, self._registered_callbacks)
+        self._callbackexecutor.start()
+
 
     def add_method(self, m):
         m = str(m) # convert from unicode...
@@ -135,7 +141,8 @@ class KB:
         self.close()
 
     def close(self):
-        self._callbackexecutor.close()
+        if self._callbackexecutor:
+            self._callbackexecutor.close()
         self._client.close_when_done()
         self._asyncore_thread.join()
 
@@ -299,6 +306,9 @@ class KBClient(asynchat.async_chat):
             self.create_socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
             self.connect( (host, port) )
 
+        self.host = host
+        self.port = port
+
         self.set_terminator(MSG_SEPARATOR)
         self._in_buffer = b""
         self._incoming_response = Queue()
@@ -319,9 +329,29 @@ class KBClient(asynchat.async_chat):
 
         self._in_buffer = b""
 
+    def handle_error(self):
+        exctype, value = sys.exc_info()[:2]
+
+        if exctype == socket.error and value.errno == ECONNREFUSED:
+            kblogger.error("Connection refused!")
+            self.handle_close()
+            return
+        
+        kblogger.error("Unhandled exception: %s: %s" % (exctype, value))
+        raise exctype(value)
+
     def call_server(self, method, *args):
         self.push(self.encode(method, *args))
-        status, value = self._incoming_response.get()
+
+        status, value = None, None
+        while True:
+            try:
+                status, value = self._incoming_response.get(True, 0.5) # leaves 500ms to connect
+                break
+            except Empty:
+                if not self.connected:
+                    raise KbError("Can not connect to the knowledge base on %s:%s" % (self.host, self.port))
+
         if status == KB_ERROR:
             raise KbError(value)
         else:
