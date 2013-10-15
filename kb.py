@@ -8,16 +8,18 @@ import sys
 import threading, asyncore
 import asynchat
 import socket
+import time
 
 import shlex
 import json
 
 try:
-    from Queue import Queue
+    from Queue import Queue, Empty
 except ImportError: #Python3 compat
-    from queue import Queue
+    from queue import Queue, Empty
 
 
+EVENT_POLLING_RATE = 20 #Hz
 DEFAULT_PORT = 6969
 
 class NullHandler(logging.Handler):
@@ -39,6 +41,54 @@ class KbError(Exception):
         return repr(self.value)
 
 
+class EventCallbackExecutor(threading.Thread):
+
+    def __init__(self, in_event_queue, out_polled_event_queue, callback_queue):
+        threading.Thread.__init__(self)
+
+        self.running = True
+        self._events = in_event_queue
+        self._polled_events = out_polled_event_queue
+        self._callbacks_queue = callback_queue
+        self._callbacks = {}
+
+    def run(self):
+
+        while self.running:
+            # wait for an event. Can not be blocking else we can not join the thread.
+            eventid, value = None, None
+            try:
+                eventid, value = self._events.get_nowait()
+            except Empty:
+                time.sleep(1. / EVENT_POLLING_RATE)
+                continue
+
+            # check if new callbacks have been registered
+            try:
+                while True:
+                    newid, cb = self._callbacks_queue.get_nowait()
+                    self._callbacks.setdefault(newid,[]).append(cb)
+            except Empty:
+                pass
+
+            if eventid not in self._callbacks:
+                # no callback associated. Put it back to the event queue for manual
+                # polling by the user
+                self._polled_events.put((eventid, value))
+                self._events.task_done()
+            else:
+                for cb in self._callbacks[eventid]:
+                    kblogger.debug("Executing callback %s" % cb.__name__)
+                    cb(value)
+                    self._events.task_done()
+
+    def close(self):
+        # make sure all received events are handled
+        self._events.join()
+        self.running = False
+        self.join()
+
+
 MSG_SEPARATOR = "#end#"
 
 KB_OK="ok"
@@ -52,7 +102,16 @@ class KB:
         self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1} )
         
 
-        self._client = KBClient(host, port, sock)
+        #incoming events
+        self._internal_events = Queue()
+        # events that are not dealt with a callback
+        self.events = Queue()
+        #new subscribers
+        self._registered_callbacks = Queue()
+        self._callbackexecutor = EventCallbackExecutor(self._internal_events, self.events, self._registered_callbacks)
+        self._callbackexecutor.start()
+
+        self._client = KBClient(self._internal_events, host, port, sock)
         self._asyncore_thread.start()
 
         #add to the KB class all the methods the server declares
@@ -60,9 +119,6 @@ class KB:
         for m in methods:
             self.add_method(m)
 
-        #callback function.
-        self._registered_events = {}
- 
     def add_method(self, m):
         m = str(m) # convert from unicode...
         def innermethod(*args):
@@ -79,19 +135,42 @@ class KB:
         self.close()
 
     def close(self):
+        self._callbackexecutor.close()
         self._client.close_when_done()
         self._asyncore_thread.join()
 
-    def subscribe(self, pattern, callback, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', agent = 'default'):
+    def subscribe(self, pattern, callback = None, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', agent = 'default'):
         """ Allows to subscribe to an event, and get notified when the event is 
-        triggered. This replace kb's registerEvent. Do not call KB.registerEvent()
-        directly since it doesn't allow to define a callback function.
-        
+        triggered.
+
+        Example with callbacks:
+        >>> def onevent(evt):
+        >>>     print("In callback. Got evt %s" % evt)
+        >>>
+        >>> self.kb.subscribe(["?o isIn room"], onevent)
+        >>> self.kb += ["alfred isIn room"]
+        >>> # 'onevent' get called
+        In callback. Got evt [u'alfred']
+
+        Example with 'polled' events:
+        >>> evt_id = self.kb.subscribe(["?o isIn room"])
+        >>> self.kb += ["alfred isIn room"]
+        >>> print(str(self.kb.events.get()))
+        ('evt_7694742461071211105', [u'alfred'])
+
+        If 'callback' is provided, the callback will be invoked with the result of 
+        the event (content depend on event type) *in a separate thread*.
+        If not callback is provided, the incoming events are stored in the 
+        KB.events queue, and you can poll them yourself (which allow for better 
+        control of the execution flow).
+
         The 'var' parameter can be used with the 'NEW_INSTANCE' type of event to
         tell which variable must be returned.
 
-        The 'agent' parameter allows for registering an event in a specific model. By default,
-        the main (robot) model is used.
+        The 'model' parameter allows for registering an event in a specific model.
+        By default, the pattern is monitored on every models.
+
+        Returns the event id of the newly created event.
         """
         
         if isinstance(pattern, basestring):
@@ -107,15 +186,14 @@ class KB:
                 "when the event is triggered by setting the 'var' parameter")
             if len(vars) == 1:
                 var = vars.pop()
-        
-        try:
-            event_id = self.server_subscribe(type, trigger, var, pattern, agent)
-            kblogger.debug("New event successfully registered with ID " + event_id)
-            self._registered_events[event_id] = callback
-        except AttributeError:
-            kblogger.error("The server seems not to support events! check the server" + \
-            " version & configuration!")
- 
+
+        event_id = self.server_subscribe(type, trigger, var, pattern, agent)
+        kblogger.debug("New event successfully registered with ID " + event_id)
+        if callback:
+            self._registered_callbacks.put((event_id, callback))
+
+        return event_id
+
     def __getitem__(self, pattern, agent='default'):
         """This method introduces a different way of querying the ontology server.
         It uses the args (be it a string or a set of strings) to find concepts
@@ -213,7 +291,9 @@ class KB:
 
 class KBClient(asynchat.async_chat):
 
-    def __init__(self, host='localhost', port=DEFAULT_PORT, sock=None):
+    use_encoding = 0 # Python2 compat.
+
+    def __init__(self, event_queue, host='localhost', port=DEFAULT_PORT, sock=None):
         asynchat.async_chat.__init__(self, sock=sock)
         if not sock:
             self.create_socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
@@ -223,12 +303,20 @@ class KBClient(asynchat.async_chat):
         self._in_buffer = b""
         self._incoming_response = Queue()
 
+        self._events = event_queue
+
     def collect_incoming_data(self, data):
         self._in_buffer = self._in_buffer + data
 
     def found_terminator(self):
         status, value = self.decode(self._in_buffer)
-        self._incoming_response.put((status, value))
+
+        if status == KB_EVENT:
+            kblogger.debug("Event received: %s (%s)" % value)
+            self._events.put(value)
+        else:
+            self._incoming_response.put((status, value))
+
         self._in_buffer = b""
 
     def call_server(self, method, *args):
@@ -251,14 +339,47 @@ class KBClient(asynchat.async_chat):
             else:
                 return "ok", None
         elif parts[0] == "event":
-            return "event", parts[1]
+            return "event", (parts[1], json.loads(parts[2]))
         elif parts[0] == "error":
             return "error", "%s: %s"%(parts[1], parts[2])
         else:
             raise KbError("Got an unexpected message status from the knowledge base: %s"%parts[0])
 
-    #def handle_error(self):
-    #    print("Bonjour!")
+    #### patch code from asynchat, ``del deque[0]`` is not safe #####
+    def initiate_send(self):
+        while self.producer_fifo and self.connected:
+            first = self.producer_fifo.popleft()
+            # handle empty string/buffer or None entry
+            if not first:
+                if first is None:
+                    self.handle_close()
+                    return
+
+            # handle classic producer behavior
+            obs = self.ac_out_buffer_size
+            try:
+                data = first[:obs]
+            except TypeError:
+                data = first.more()
+                if data:
+                    self.producer_fifo.appendleft(data)
+                continue
+
+            if isinstance(data, str) and self.use_encoding:
+                data = bytes(data, self.encoding)
+
+            # send the data
+            try:
+                num_sent = self.send(data)
+            except socket.error:
+                self.handle_error()
+                return
+
+            if num_sent:
+                if num_sent < len(data) or obs < len(first):
+                    self.producer_fifo.appendleft(first[num_sent:])
+            # we tried to send some actual data
+            return
 
 
 if __name__ == '__main__':
