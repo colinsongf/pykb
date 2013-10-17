@@ -10,7 +10,7 @@ import threading, asyncore
 import asynchat
 import socket
 import time
-
+import random
 import shlex
 import json
 
@@ -115,7 +115,7 @@ class KB:
         #add to the KB class all the methods the server declares
         methods = self._client.call_server("methods")
         for m in methods:
-            self.add_method(m)
+            self.add_method(m.split("(")[0])
 
         #new subscribers. The callbackExecutor thread is started only at the
         # end of the constructor -> we first want to be sure we were able
@@ -226,12 +226,31 @@ class KB:
         city_id = kb["ville rose"]
         """
         
+        def replacestar(pattern, vars = []):
+            var = "?" + "".join(random.sample("abcdefghijklmopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", 5))
+
+            newpattern = pattern.replace("*", var, 1)
+
+            # no more stars?
+            if newpattern == pattern:
+                return vars, pattern
+            else:
+                return replacestar(newpattern, vars + [var])
+
         if type(pattern) == list:
-            return self.find(["?_var"], [stmt.replace("*", "?_var") for stmt in pattern], None, models)
+            normalizedpatterns = []
+            for p in pattern:
+                vars, pat = replacestar(p)
+                normalizedpatterns.append(pat)
+
+            vars = [v for v in " ".join(normalizedpatterns).split() if v.startswith('?')]
+
+            return self.find(vars, normalizedpatterns, None, models)
         
         else:
             if "*" in pattern:
-                return self.find(["?_var"], [pattern.replace("*", "?_var")], None, models)
+                vars, normalizedpattern = replacestar(pattern)
+                return self.find(vars, [normalizedpattern], None, models)
             else:
                 lookup = self.lookup(pattern, models)
                 return [concept[0] for concept in lookup]
@@ -338,7 +357,10 @@ class KBClient(asynchat.async_chat):
             return
         
         kblogger.error("Unhandled exception: %s: %s" % (exctype, value))
-        raise exctype(value)
+        import traceback
+        traceback.print_exc()
+
+        raise value
 
     def call_server(self, method, *args):
         self.push(self.encode(method, *args))
@@ -371,7 +393,7 @@ class KBClient(asynchat.async_chat):
         elif parts[0] == "event":
             return "event", (parts[1], json.loads(parts[2]))
         elif parts[0] == "error":
-            return "error", "%s: %s"%(parts[1], parts[2])
+            return "error", "%s: %s"%(parts[1], parts[2] if len(parts) == 3 else "[no error msg]")
         else:
             raise KbError("Got an unexpected message status from the knowledge base: %s"%parts[0])
 
