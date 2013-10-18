@@ -183,6 +183,9 @@ class KB:
         if isinstance(pattern, basestring):
             pattern = [pattern]
         
+        if var and not var.startswith('?'):
+            var = '?' + var
+
         if type == 'NEW_INSTANCE' and not var:
             #Look if there's more than one variable in the pattern
             vars = set()
@@ -201,17 +204,33 @@ class KB:
 
         return event_id
 
-    def __getitem__(self, pattern, models = None):
+    def __getitem__(self, *args):
         """This method introduces a different way of querying the ontology server.
         It uses the args (be it a string or a set of strings) to find concepts
         that match the pattern.
         An optional 'models' parameter can be given to specify the list of models the 
         query is executed on.
+
+        Depending on the argument, 4 differents behaviours are possible:
+
+        - with a string that can not be lexically split into 3 tokens (ie, a string
+          that do not look like a "s p o" tuple), a lookup is performed, and matching
+          resource are returned
+        - with a single "s p o" pattern:
+            - if only one of s, p, o is an unbound variable, returns the list of resources
+              matching this pattern.
+            - if 2 or 3 of the tokens are unbound variables (like kb["* * *"]
+              or kb["* rdf:type *"]), a list of statements matching the pattern
+              is returned.
+        - with a list of patterns, a list of dictionaries is returned with
+          possible combination of values for the different variables. For
+          instance, kb[["?agent desires ?action", "?action rdf:type Jump"]]
+          would return something like: [{"agent":"james", "action": "jumpHigh"}, {"agent": "laurel", "action":"jumpHigher"}]
         
-        Differences with a simple 'find':
-         - it uses '*' instead of '?varname' (but unbound variable starting
-         with a '?' are still valid to describe relations between concepts)
-         - it can be use to do a lookup
+        Attention: if more than one argument is passed, and if the last
+        argument is a list, this list is used as the set of models to execute
+        the query on. If not such list is provided, the query is executed on
+        all models.
         
         Use example:
         kb = KB(<host>, <port>)
@@ -219,42 +238,45 @@ class KB:
         for agent in kb["* rdf:type Agent"]
             ...
         
-        if kb[["* livesIn ?house", "?house isIn toulouse"], models=['GERALD']]
+        if kb["* livesIn ?house", "?house isIn toulouse", ['GERALD']]
             ...
         
         #Assuming 'toulouse' has label "ville rose":
         city_id = kb["ville rose"]
         """
-        
-        def replacestar(pattern, vars = []):
-            var = "?" + "".join(random.sample("abcdefghijklmopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", 5))
+        args = args[0]
 
-            newpattern = pattern.replace("*", var, 1)
+        # First, take care of models
+        models = None
+        if len(args) > 1 and isinstance(args[-1], list):
+            models = args[-1]
+            args = args[:-1]
 
-            # no more stars?
-            if newpattern == pattern:
-                return vars, pattern
-            else:
-                return replacestar(newpattern, vars + [var])
 
-        if type(pattern) == list:
-            normalizedpatterns = []
-            for p in pattern:
-                vars, pat = replacestar(p)
-                normalizedpatterns.append(pat)
+        def get_vars(s):
+            return [v for v in s if v.startswith('?')]
 
-            vars = [v for v in " ".join(normalizedpatterns).split() if v.startswith('?')]
-
-            return self.find(vars, normalizedpatterns, None, models)
-        
-        else:
-            if "*" in pattern:
-                vars, normalizedpattern = replacestar(pattern)
-                return self.find(vars, [normalizedpattern], None, models)
+        # Single argument
+        if isinstance(args, (str, unicode)) or len(args) == 1:
+            pattern = args[0] if isinstance(args, list) else args
+            toks = shlex.split(pattern)
+            if len(toks) == 3:
+                pattern = self._replacestar(toks)
+                vars = get_vars(pattern)
+                return self.find(vars, ["%s %s %s" % pattern], None, models)
             else:
                 lookup = self.lookup(pattern, models)
                 return [concept[0] for concept in lookup]
-    
+
+        # List of patterns
+        else:
+            patterns = [self._replacestar(shlex.split(p)) for p in args]
+            allvars = set()
+            for p in patterns:
+                allvars |= set(get_vars(p))
+
+            return self.find(list(allvars), ["%s %s %s"%p for p in patterns], None, models)
+
     def __contains__(self, pattern):
         """ This will return 'True' is either a concept - described by its ID or
         label- or a statement or a set of statement is present (or can be infered)
@@ -266,17 +288,12 @@ class KB:
             if 'toto sees tata' in kb:
                 ...
         """
-        if not (type(pattern) == list):
-            #First, attempt a lookup
-            if self.lookup(pattern):
-                return True
-            #Lookup didn't answer anything. Check if pattern it can be statement
-            if len(shlex.split(pattern)) != 3:
-                return False
-
-            pattern = [pattern]
-        
-        return self.exist(pattern)
+        toks = shlex.split(pattern)
+        if len(toks) == 3:
+            pattern = self._replacestar(toks)
+            return self.exist(["%s %s %s" % pattern])
+        else:
+            return True if self.lookup(pattern) else False
     
     def __iadd__(self, stmts):
         """ This method allows to easily add new statements to the ontology
@@ -313,6 +330,14 @@ class KB:
         
         return self
 
+    def _replacestar(self, pattern):
+        res = []
+        for tok in pattern:
+            if tok == '*':
+                res.append("?" + "".join(random.sample("abcdefghijklmopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", 5)))
+            else:
+                res.append(tok)
+        return tuple(res)
 
 
 class KBClient(asynchat.async_chat):
