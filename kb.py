@@ -137,6 +137,13 @@ class KB:
         innermethod.__name__ = m if m != "subscribe" else "server_subscribe"
         setattr(self,innermethod.__name__,innermethod)
 
+    #### with statement ####
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def __del__(self):
         self.close()
 
