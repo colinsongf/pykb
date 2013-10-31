@@ -99,8 +99,9 @@ KB_EVENT="event"
 class KB:
 
     def __init__(self, host='localhost', port=DEFAULT_PORT, sock=None):
-
-        self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1} )
+        
+        self._channels = {}
+        self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1, 'map': self._channels} )
         
 
         #incoming events
@@ -109,7 +110,7 @@ class KB:
         self.events = Queue()
         self._callbackexecutor = None
 
-        self._client = KBClient(self._internal_events, host, port, sock)
+        self._client = KBClient(self._internal_events, self._channels, host, port, sock)
         self._asyncore_thread.start()
 
         #add to the KB class all the methods the server declares
@@ -351,8 +352,8 @@ class KBClient(asynchat.async_chat):
 
     use_encoding = 0 # Python2 compat.
 
-    def __init__(self, event_queue, host='localhost', port=DEFAULT_PORT, sock=None):
-        asynchat.async_chat.__init__(self, sock=sock)
+    def __init__(self, event_queue, map, host='localhost', port=DEFAULT_PORT, sock=None):
+        asynchat.async_chat.__init__(self, sock=sock, map=map)
         if not sock:
             self.create_socket(family=socket.AF_INET, type=socket.SOCK_STREAM)
             self.connect( (host, port) )
