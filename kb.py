@@ -5,7 +5,7 @@ import logging; kblogger = logging.getLogger("kb");
 DEBUG_LEVEL=logging.WARN
 
 import sys
-from errno import ECONNREFUSED
+from errno import ECONNREFUSED, EWOULDBLOCK, EAGAIN
 import threading, asyncore
 import asynchat
 import socket
@@ -388,7 +388,10 @@ class KBClient(asynchat.async_chat):
             kblogger.error("Connection refused!")
             self.handle_close()
             return
-        
+        if exctype == socket.error and value.errno in (EAGAIN, EWOULDBLOCK):
+            kblogger.warn("Resource not available. Will retry.")
+            return
+
         kblogger.error("Unhandled exception: %s: %s" % (exctype, value))
         import traceback
         traceback.print_exc()
