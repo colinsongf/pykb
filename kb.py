@@ -99,17 +99,16 @@ KB_EVENT="event"
 class KB:
 
     def __init__(self, host='localhost', port=DEFAULT_PORT, sock=None):
-        
-        self._channels = {}
-        self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1, 'map': self._channels} )
-        
-
+ 
         #incoming events
         self._internal_events = Queue()
         # events that are not dealt with a callback
         self.events = Queue()
         self._callbackexecutor = None
 
+       
+        self._channels = {}
+        self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1, 'map': self._channels} )
         self._client = KBClient(self._internal_events, self._channels, host, port, sock)
         self._asyncore_thread.start()
 
@@ -133,9 +132,10 @@ class KB:
             return self._client.call_server(m, *args)
                 
         innermethod.__doc__ = "This method is a proxy for the knowledge server %s method." % m
-        #HACK: special case for the server's subscribe method: we want to override it
-        # to provide proper Python callback.
-        innermethod.__name__ = m if m != "subscribe" else "server_subscribe"
+        #special cases for the server's methods we want to override
+        if m == "subscribe": innermethod.__name__ = "server_subscribe"
+        elif m == "close": innermethod.__name__ = "server_close"
+        else: innermethod.__name__ = m
         setattr(self,innermethod.__name__,innermethod)
 
     #### with statement ####
@@ -151,6 +151,7 @@ class KB:
     def close(self):
         if self._callbackexecutor:
             self._callbackexecutor.close()
+        self.server_close() # call the remote KB close() method
         self._client.close_when_done()
         self._asyncore_thread.join()
 
@@ -306,7 +307,7 @@ class KB:
     def __iadd__(self, stmts):
         """ This method allows to easily add new statements to the ontology
         with the '+=' operator.
-        It can only add statement to the robot's model (other agents' model are 
+        It can only add statement to the default robot's model (other agents' model are 
         not accessible).
         
         kb = KB(<host>, <port>)
@@ -316,7 +317,7 @@ class KB:
         if not (type(stmts) == list):
             stmts = [stmts]
         
-        self.add(stmts)
+        self.update(stmts)
         
         return self
 
@@ -404,11 +405,13 @@ class KBClient(asynchat.async_chat):
         status, value = None, None
         while True:
             try:
-                status, value = self._incoming_response.get(True, 0.5) # leaves 500ms to connect
+                status, value = self._incoming_response.get(True, 0.01)
                 break
             except Empty:
                 if not self.connected:
-                    raise KbError("Can not connect to the knowledge base on %s:%s" % (self.host, self.port))
+                    # Connection closed!
+                    self.close_when_done()
+                    break
 
         if status == KB_ERROR:
             raise KbError(value)
