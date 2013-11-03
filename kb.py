@@ -13,6 +13,7 @@ import time
 import random
 import shlex
 import json
+import traceback
 
 try:
     from Queue import Queue, Empty
@@ -98,7 +99,7 @@ KB_EVENT="event"
 
 class KB:
 
-    def __init__(self, host='localhost', port=DEFAULT_PORT, sock=None):
+    def __init__(self, host='localhost', port=DEFAULT_PORT, embedded = False, defaultontology = None, sock=None):
  
         #incoming events
         self._internal_events = Queue()
@@ -106,11 +107,14 @@ class KB:
         self.events = Queue()
         self._callbackexecutor = None
 
-       
-        self._channels = {}
-        self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1, 'map': self._channels} )
-        self._client = KBClient(self._internal_events, self._channels, host, port, sock)
-        self._asyncore_thread.start()
+        self.embedded = embedded
+        if not self.embedded:
+            self._channels = {}
+            self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1, 'map': self._channels} )
+            self._client = RemoteKBClient(self._internal_events, self._channels, host, port, sock)
+            self._asyncore_thread.start()
+        else:
+            self._client = EmbeddedKBClient(defaultontology)
 
         #add to the KB class all the methods the server declares
         methods = self._client.call_server("methods")
@@ -151,9 +155,10 @@ class KB:
     def close(self):
         if self._callbackexecutor:
             self._callbackexecutor.close()
-        self.server_close() # call the remote KB close() method
-        self._client.close_when_done()
-        self._asyncore_thread.join()
+
+        if not self.embedded:
+            self.server_close() # call the remote KB close() method. This will also close the RemoteKBClient channel
+            self._asyncore_thread.join()
 
     def subscribe(self, pattern, callback = None, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', models = None):
         """ Allows to subscribe to an event, and get notified when the event is 
@@ -349,7 +354,69 @@ class KB:
         return tuple(res)
 
 
-class KBClient(asynchat.async_chat):
+class EmbeddedKBClient():
+
+    kb = None
+    kb_thread = None
+    kb_users = 0
+
+    def __init__(self, defaultontology = None):
+        try:
+            from minimalkb.kb import MinimalKB
+        except ImportError:
+            raise KbError("Embedded kb required, but MinimalKB can not be imported!")
+
+        kblogger.warn("Using embedded kb: events are not yet supported!")
+
+        if not EmbeddedKBClient.kb:
+            kblogger.info("Initializing the embedded knowledge base.")
+            self._running = True
+            EmbeddedKBClient.kb_thread = threading.Thread(target=self.process, kwargs = {"defaultontology":defaultontology})
+            EmbeddedKBClient.kb_thread.start()
+            while not hasattr(self, "_kb"):
+                time.sleep(0.01)
+        else:
+            self._kb = EmbeddedKBClient.kb
+            if defaultontology:
+                kblogger.warn("The embedded knowledge base has already been " + \
+                              "initialized. I will ignore default ontology <%s>." % defaultontology)
+
+        self._incoming_response = Queue()
+
+        EmbeddedKBClient.kb_users += 1
+
+    def call_server(self, method, *args):
+        self._kb.submitrequest(self, method, *args)
+
+        # Block until a result is available
+        status, value = self._incoming_response.get()
+
+        if status == KB_ERROR:
+            raise KbError(value)
+        else:
+            return value
+
+    def sendmsg(self, msg):
+        self._incoming_response.put(msg)
+
+    def process(self, defaultontology):
+        from minimalkb.kb import MinimalKB
+        EmbeddedKBClient.kb = MinimalKB(defaultontology)
+        self._kb = EmbeddedKBClient.kb
+        while self._running:
+            EmbeddedKBClient.kb.process()
+
+    def close(self):
+        EmbeddedKBClient.kb_users -= 1
+        if EmbeddedKBClient.kb_users == 0:
+            kblogger("Last user of the embedded knowledge base has left. " + \
+                     "Closing the knowledge base.")
+            self._running = False
+            EmbeddedKBClient.kb_thread.join()
+            EmbeddedKBClient.kb = None # reset kb to none so a new fresh thread may be created if needed.
+
+
+class RemoteKBClient(asynchat.async_chat):
 
     use_encoding = 0 # Python2 compat.
 
@@ -410,7 +477,7 @@ class KBClient(asynchat.async_chat):
             except Empty:
                 if not self.connected:
                     # Connection closed!
-                    self.close_when_done()
+                    self.close()
                     break
 
         if status == KB_ERROR:
