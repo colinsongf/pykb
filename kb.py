@@ -156,9 +156,12 @@ class KB:
         if self._callbackexecutor:
             self._callbackexecutor.close()
 
+        self.server_close() # call the KB close() method. This will also close the RemoteKBClient channel if needed
+
         if not self.embedded:
-            self.server_close() # call the remote KB close() method. This will also close the RemoteKBClient channel
             self._asyncore_thread.join()
+        else:
+            self._client.close()
 
     def subscribe(self, pattern, callback = None, var = None, type = 'NEW_INSTANCE', trigger = 'ON_TRUE', models = None):
         """ Allows to subscribe to an event, and get notified when the event is 
@@ -366,6 +369,10 @@ class EmbeddedKBClient():
         except ImportError:
             raise KbError("Embedded kb required, but MinimalKB can not be imported!")
 
+        minimalkblogger = logging.getLogger("minimalKB")
+        minimalkblogger.addHandler(NullHandler())
+
+
         kblogger.warn("Using embedded kb: events are not yet supported!")
 
         if not EmbeddedKBClient.kb:
@@ -388,6 +395,10 @@ class EmbeddedKBClient():
     def call_server(self, method, *args):
         self._kb.submitrequest(self, method, *args)
 
+        # if we are closing, do not wait for an answer
+        if method == "close":
+            return None
+
         # Block until a result is available
         status, value = self._incoming_response.get()
 
@@ -409,9 +420,10 @@ class EmbeddedKBClient():
     def close(self):
         EmbeddedKBClient.kb_users -= 1
         if EmbeddedKBClient.kb_users == 0:
-            kblogger("Last user of the embedded knowledge base has left. " + \
-                     "Closing the knowledge base.")
+            kblogger.debug("Last user of the embedded knowledge base has left. " + \
+                           "Closing the knowledge base.")
             self._running = False
+            EmbeddedKBClient.kb.stop_services()
             EmbeddedKBClient.kb_thread.join()
             EmbeddedKBClient.kb = None # reset kb to none so a new fresh thread may be created if needed.
 
