@@ -109,6 +109,8 @@ class KB:
 
         self.embedded = embedded
         if not self.embedded:
+            if not host or not port:
+                raise KbError("No host and/or port specified to connect to the knowledge base.")
             self._channels = {}
             self._asyncore_thread = threading.Thread( target = asyncore.loop, kwargs = {'timeout': .1, 'map': self._channels} )
             self._client = RemoteKBClient(self._internal_events, self._channels, host, port, sock)
