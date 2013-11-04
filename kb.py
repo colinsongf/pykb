@@ -403,7 +403,7 @@ class EmbeddedKBClient():
         status, value = self._incoming_response.get()
 
         if status == KB_ERROR:
-            raise KbError(value)
+            raise KbError(str(value))
         else:
             return value
 
