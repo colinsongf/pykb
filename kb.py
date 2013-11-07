@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import logging; kblogger = logging.getLogger("kb");
-DEBUG_LEVEL=logging.WARN
+import logging
+kblogger = logging.getLogger("kb")
+DEBUG_LEVEL = logging.WARN
 
 import sys
 from errno import ECONNREFUSED, EWOULDBLOCK, EAGAIN
@@ -133,9 +134,12 @@ class KB:
 
     def add_method(self, m):
         m = str(m) # convert from unicode...
-        def innermethod(*args):
-            kblogger.debug("Sending <%s> request to server."%m)
-            return self._client.call_server(m, *args)
+        def innermethod(*args, **kwargs):
+            kblogger.debug("Sending <%s(%s,%s)> request to server." % \
+                            (m, 
+                             ", ".join([str(a) for a in args]),
+                             ", ".join(str(k)+"="+str(v) for k,v in kwargs.items())))
+            return self._client.call_server(m, *args, **kwargs)
                 
         innermethod.__doc__ = "This method is a proxy for the knowledge server %s method." % m
         #special cases for the server's methods we want to override
@@ -394,8 +398,8 @@ class EmbeddedKBClient():
 
         EmbeddedKBClient.kb_users += 1
 
-    def call_server(self, method, *args):
-        self._kb.submitrequest(self, method, *args)
+    def call_server(self, method, *args, **kwargs):
+        self._kb.submitrequest(self, method, *args, **kwargs)
 
         # if we are closing, do not wait for an answer
         if method == "close":
@@ -475,13 +479,12 @@ class RemoteKBClient(asynchat.async_chat):
             return
 
         kblogger.error("Unhandled exception: %s: %s" % (exctype, value))
-        import traceback
         traceback.print_exc()
 
         raise value
 
-    def call_server(self, method, *args):
-        self.push(self.encode(method, *args))
+    def call_server(self, method, *args, **kwargs):
+        self.push(self.encode(method, *args, **kwargs))
 
         status, value = None, None
         while True:
@@ -499,8 +502,11 @@ class RemoteKBClient(asynchat.async_chat):
         else:
             return value
 
-    def encode(self, method, *args):
-        return "\n".join([method] + [json.dumps(a) for a in args] + [MSG_SEPARATOR])
+    def encode(self, method, *args, **kwargs):
+        return "\n".join([method] + \
+                         [json.dumps(a) for a in args] + \
+                         ([json.dumps({"kwargs":kwargs})] if kwargs else []) + \
+                         [MSG_SEPARATOR])
 
     def decode(self, raw):
         parts = raw.strip().split('\n')
