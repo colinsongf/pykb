@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name='pykb',
-      version='1.4',
+      version='1.5',
       license='BSD',
       description='Python API to access a KB-API conformant knowledge base',
       classifiers=[
