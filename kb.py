@@ -121,6 +121,8 @@ class KB:
 
         #add to the KB class all the methods the server declares
         methods = self._client.call_server("methods")
+        if not methods:
+            raise KbError("Could not connect to the knowledge base. Is it started?")
         for m in methods:
             self.add_method(m.split("(")[0])
 
@@ -162,7 +164,12 @@ class KB:
         if self._callbackexecutor:
             self._callbackexecutor.close()
 
-        self.server_close() # call the KB close() method. This will also close the RemoteKBClient channel if needed
+        try:
+            self.server_close() # call the KB close() method. This will also close the RemoteKBClient channel if needed
+        except AttributeError:
+            # the connection is likely not yet established, so we did not create 
+            # proxies for remote methods.
+            pass
 
         if not self.embedded:
             self._asyncore_thread.join()
