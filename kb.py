@@ -181,6 +181,7 @@ class KB:
         triggered.
 
         Example with callbacks:
+
         >>> def onevent(evt):
         >>>     print("In callback. Got evt %s" % evt)
         >>>
@@ -190,6 +191,7 @@ class KB:
         In callback. Got evt [u'alfred']
 
         Example with 'polled' events:
+
         >>> evt_id = self.kb.subscribe(["?o isIn room"])
         >>> self.kb += ["alfred isIn room"]
         >>> print(str(self.kb.events.get()))
@@ -244,18 +246,19 @@ class KB:
         Depending on the argument, 4 differents behaviours are possible:
 
         - with a string that can not be lexically split into 3 tokens (ie, a string
-          that do not look like a "s p o" tuple), a lookup is performed, and matching
+          that do not look like a ``s p o`` tuple), a lookup is performed, and matching
           resource are returned
-        - with a single "s p o" pattern:
+        - with a single ``s p o`` pattern:
             - if only one of s, p, o is an unbound variable, returns the list of resources
               matching this pattern.
-            - if 2 or 3 of the tokens are unbound variables (like kb["* * *"]
-              or kb["* rdf:type *"]), a list of statements matching the pattern
+            - if 2 or 3 of the tokens are unbound variables (like ``kb["* * *"]``
+              or ``kb["* rdf:type *"]``), a list of statements matching the pattern
               is returned.
         - with a list of patterns, a list of dictionaries is returned with
           possible combination of values for the different variables. For
-          instance, kb[["?agent desires ?action", "?action rdf:type Jump"]]
-          would return something like: [{"agent":"james", "action": "jumpHigh"}, {"agent": "laurel", "action":"jumpHigher"}]
+          instance, ``kb[["?agent desires ?action", "?action rdf:type Jump"]]``
+          would return something like: ``[{"agent":"james", "action":
+          "jumpHigh"}, {"agent": "laurel", "action":"jumpHigher"}]``
         
         Attention: if more than one argument is passed, and if the last
         argument is a list, this list is used as the set of models to execute
@@ -263,16 +266,22 @@ class KB:
         all models.
         
         Use example:
-        kb = KB(<host>, <port>)
-        
-        for agent in kb["* rdf:type Agent"]
-            ...
-        
-        if kb["* livesIn ?house", "?house isIn toulouse", ['GERALD']]
-            ...
-        
-        #Assuming 'toulouse' has label "ville rose":
-        city_id = kb["ville rose"]
+
+        .. code:: python
+
+            import kb
+
+            kb = KB()
+
+            for agent in kb["* rdf:type Agent"]:
+                #...
+
+            if kb["* livesIn ?house", "?house isIn toulouse", ['GERALD']]:
+                #...
+
+            #Assuming 'toulouse' has label "ville rose":
+            city_id = kb["ville rose"]
+
         """
         args = args[0]
 
@@ -313,10 +322,14 @@ class KB:
         in the ontology.
         
         This allows syntax like:
+
+        .. code:: python
+
             if 'Toto' in kb:
-                ...
+                #...
             if 'toto sees tata' in kb:
-                ...
+                #...
+
         """
         toks = shlex.split(pattern)
         if len(toks) == 3:
@@ -327,13 +340,16 @@ class KB:
     
     def __iadd__(self, stmts):
         """ This method allows to easily add new statements to the ontology
-        with the '+=' operator.
+        with the ``+=`` operator.
         It can only add statement to the default robot's model (other agents' model are 
         not accessible).
         
-        kb = KB(<host>, <port>)
-        kb += "toto likes icecream"
-        kb += ["toto loves tata", "tata rdf:type Robot"]
+        .. code:: python
+
+            kb = KB(<host>, <port>)
+            kb += "toto likes icecream"
+            kb += ["toto loves tata", "tata rdf:type Robot"]
+
         """
         if not (type(stmts) == list):
             stmts = [stmts]
@@ -344,14 +360,17 @@ class KB:
 
     def __isub__(self, stmts):
         """ This method allows to easily retract statements from the ontology
-        with the '-=' operator.
+        with the ``-=`` operator.
         It can only add statement to the robot's model (other agents' model are 
         not accessible).
         If a statement doesn't exist, it is silently skipped.
-        
-        kb = KB(<host>, <port>)
-        kb -= "toto likes icecream"
-        kb -= ["toto loves tata", "tata rdf:type Robot"]
+
+        .. code:: python
+
+            kb = KB(<host>, <port>)
+            kb -= "toto likes icecream"
+            kb -= ["toto loves tata", "tata rdf:type Robot"]
+
         """
         if not (type(stmts) == list):
             stmts = [stmts]
