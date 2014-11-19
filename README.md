@@ -21,7 +21,7 @@ $ pip install pykb
 Documentation
 -------------
 
-[Head to readthedocs](http://pyrobots.readthedocs.org). Sparse for now.
+[Head to readthedocs](http://pykb.readthedocs.org). Sparse for now.
 
 
 Examples
